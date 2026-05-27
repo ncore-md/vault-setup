@@ -444,16 +444,22 @@ for hook in "$BUNDLE/hooks/"*.js; do
   fi
 done
 
-# ── Step 2: Install skill into ~/.claude/skills/ ───────────────────
-log "Installing vault-rules skill to $SKILLS_DIR/vault-rules"
+# ── Step 2: Install skills into ~/.claude/skills/ ───────────────
+log "Installing skills to $SKILLS_DIR"
 
-if [[ "$DRY_RUN" == true ]]; then
-  log "[dry-run] Would install skill to $SKILLS_DIR/vault-rules/"
-else
-  mkdir -p "$SKILLS_DIR/vault-rules"
-  cp "$BUNDLE/skills/vault-rules/SKILL.md" "$SKILLS_DIR/vault-rules/"
-  log "Installed SKILL.md → vault-rules/"
-fi
+for skill_dir in "$BUNDLE/skills"/*/; do
+  [[ -d "$skill_dir" ]] || continue
+  skill_name="$(basename "$skill_dir")"
+  if [[ -f "$skill_dir/SKILL.md" ]]; then
+    if [[ "$DRY_RUN" == true ]]; then
+      log "[dry-run] Would install $skill_name/SKILL.md → $SKILLS_DIR/$skill_name/"
+    else
+      mkdir -p "$SKILLS_DIR/$skill_name"
+      cp "$skill_dir/SKILL.md" "$SKILLS_DIR/$skill_name/"
+      log "Installed SKILL.md → $skill_name/"
+    fi
+  fi
+done
 
 # ── Step 3: Install brief into ~/.claude/ ─────────────────────────
 log "Installing vault-brief.md to $CLAUDE"
@@ -662,7 +668,7 @@ else
   log "Vault setup complete!"
   log "  Vault root:        $VAULT_ROOT"
   log "  Hooks:        $HOOKS_DIR/vault-rules-{inject,validate}.js"
-  log "  Skill:        $SKILLS_DIR/vault-rules/SKILL.md"
+  log "  Skills:       $(ls "$SKILLS_DIR"/ | tr '\n' ', ')"
   log "  Brief:        $CLAUDE/vault-brief.md"
   echo ""
   log "Next steps:"
