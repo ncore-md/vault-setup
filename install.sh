@@ -78,15 +78,6 @@ if [[ "$_UNINSTALL" == true ]]; then
       log "Removed vault from Obsidian registration (if present)"
     fi
 
-    # Remove pi-vault-path entry if present
-    _pi_path="$HOME/.pi/pi-vault-path"
-    if [[ -f "$_pi_path" ]]; then
-      _pi_tmp="${_pi_path}.tmp.$$"
-      grep -vxF "$VAULT_ROOT" "$_pi_path" > "$_pi_tmp" 2>/dev/null || true
-      mv "$_pi_tmp" "$_pi_path"
-      log "Removed vault from pi-vault-path (if present)"
-    fi
-
     # Remove installed files
     rm -f "$HOOKS_DIR/vault-rules-inject.js" "$HOOKS_DIR/vault-rules-validate.js"
     rm -f "$CLAUDE/skills/vault-rules/SKILL.md"
@@ -210,54 +201,6 @@ _register_obsidian_vault() {
      "$_OBSSI_CONFIG" > "$_obs_tmp" && mv "$_obs_tmp" "$_OBSSI_CONFIG"
 
   log "Registered vault in Obsidian (id=$id, path=$vault_path)"
-}
-
-_register_pi_vault() {
-  local vault_path="$1"
-  mkdir -p "$HOME_DIR/.pi"
-
-  # Confirm before writing to third-party config
-  if [[ -f "$HOME_DIR/.pi/pi-vault-path" ]]; then
-    grep -qxF "$vault_path" "$HOME_DIR/.pi/pi-vault-path" 2>/dev/null || {
-      if [[ "$DRY_RUN" != true ]]; then
-        echo "" >&2
-        _prompt_msg="Register vault path with pi-vault-path? ($HOME_DIR/.pi/pi-vault-path) [y/N] "
-        _prompt_msg="${_prompt_msg% ]}"
-        echo -n "$_prompt_msg" >&2
-        read -r _confirm_pi
-      else
-        echo "[dry-run] Would register with pi-vault-path" >&2
-        _confirm_pi="y"
-      fi
-
-      if [[ "$_confirm_pi" == [yY]* ]]; then
-        echo "$vault_path" >> "$HOME_DIR/.pi/pi-vault-path"
-      else
-        log "Skipping pi-vault-path registration (user declined)."
-        return 0
-      fi
-    }
-  else
-    if [[ "$DRY_RUN" != true ]]; then
-      echo "" >&2
-      _prompt_msg="Register vault path with pi-vault-path? ($HOME_DIR/.pi/pi-vault-path) [y/N] "
-      _prompt_msg="${_prompt_msg% ]}"
-      echo -n "$_prompt_msg" >&2
-      read -r _confirm_pi
-    else
-      echo "[dry-run] Would create pi-vault-path" >&2
-      _confirm_pi="y"
-    fi
-
-    if [[ "$_confirm_pi" == [yY]* ]]; then
-      echo "$vault_path" > "$HOME_DIR/.pi/pi-vault-path"
-    else
-      log "Skipping pi-vault-path registration (user declined)."
-      return 0
-    fi
-  fi
-
-  log "Registered vault path in ~/.pi/pi-vault-path"
 }
 
 # ── Default vault name ─────────────────────────────────────────────
@@ -676,7 +619,6 @@ fi
 # ── Step 7: Register vault with Obsidian & skill discovery ───────
 if [[ "$DRY_RUN" != true ]]; then
   _register_obsidian_vault "$VAULT_ROOT" || warn "Obsidian registration skipped"
-  _register_pi_vault "$VAULT_ROOT"
 fi
 
 # ── Step 8: Dependency checks ─────────────────────────────────────

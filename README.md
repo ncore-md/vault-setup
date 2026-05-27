@@ -154,7 +154,6 @@ If you use the Obsidian app, the installer can register your vault in `obsidian.
 ### Disabling parts of the system
 - **No hooks:** Skip step 6 of installation (decline when prompted). Hooks are optional — the SKILL.md and AGENTS.md work without them.
 - **No Obsidian registration:** Decline when prompted during install, or remove entries from `obsidian.json` manually.
-- **No pi-vault-path:** Decline when prompted, or remove the path from `~/.pi/pi-vault-path`.
 
 ## Files
 
@@ -202,4 +201,3 @@ rm -rf ~/.vault/MyVault
 - **Moving a vault after install** — Update the state file manually: `jq '.vault_path = "new/path"' ~/.claude/hooks/vault-rules-state.json`. The old matcher in settings.json will still work for reads.
 - **settings.json race condition** — Running two installs simultaneously may corrupt the file. Install vaults sequentially.
 - **Obsidian config** — Registration writes to Obsidian's `obsidian.json`. If you don't use Obsidian, decline when prompted (or the write is silent).
-- **pi-vault-path** — Registration appends to a third-party tool's config file. Decline when prompted if you don't use it.
