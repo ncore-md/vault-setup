@@ -79,7 +79,11 @@
       "Bash(claude \"Write Wiki/Concepts/new-file-test-2026.md with content 'test'\")",
       "Bash(HOME=/tmp/test-home bash install.sh --dry-run)",
       "Bash(HOME=/tmp/test-home bash install.sh --vault-name TestVault)",
-      "Bash(HOME=/tmp/test-home bash install.sh --uninstall --vault-name TestVault)"
+      "Bash(HOME=/tmp/test-home bash install.sh --uninstall --vault-name TestVault)",
+      "Bash(git commit *)",
+      "Bash(bash -n install.sh)",
+      "Bash(HOME=/tmp/test-home2 bash install.sh --vault-name TestVault --dry-run)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }
