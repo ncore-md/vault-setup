@@ -269,10 +269,20 @@ _jq_merge_with_jq() {
     NODE_PATH="$(_detect_node)" || return 1
   fi
 
-  # Helper: check if a matcher already has the vault-rules hook
+  # Migration: fix any existing entries that have top-level command instead of nested in hooks array
+  log "Checking for broken hook entries (top-level 'command' → nested in 'hooks')..."
+  jq --arg node "$NODE_PATH" \
+     '.hooks.PreToolUse |= [.[] | if has("command") then
+       .timeout as $t |
+       .hooks = ((.hooks // []) + [{"type":"command","timeout":(if $t then $t else 15 end),"command":.command}]) |
+       del(.type,.timeout,.command)
+     else . end]' \
+     "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
+
+  # Helper: check if a matcher already has the vault-rules hook.
   _has_vault_hook() {
     local matcher="$1"
-    jq -e ".hooks.PreToolUse[] | select(.matcher == \$m) | .hooks[] | select(.command // \"\" | contains(\"vault-rules-\"))" "$settings" --arg m "$matcher" &>/dev/null
+    jq -e ".hooks.PreToolUse[] | select(.matcher == \$m) | .hooks // [] | .[] | select((.command // \"\") | contains(\"vault-rules-\"))" "$settings" --arg m "$matcher" &>/dev/null
   }
 
   # Helper: add a hook entry if not present (jq approach).
@@ -281,34 +291,32 @@ _jq_merge_with_jq() {
     local matcher="$1" inject_path="$2" validate_path="$3"
 
     if ! _has_vault_hook "$matcher"; then
+      local timeout=15 command=""
+
+      if [[ -n "$validate_path" ]]; then
+        timeout=5
+        command="${NODE_PATH} ${validate_path}"
+      elif [[ -n "$inject_path" ]]; then
+        command="${NODE_PATH} ${inject_path}"
+      fi
+
       if [[ "$DRY_RUN" == true ]]; then
         log "[dry-run] Would add vault-rules hooks for matcher: $matcher"
       else
-        if [[ "$matcher" == "Bash"* ]]; then
-          jq --arg m    "$matcher" \
-             --arg node  "$NODE_PATH" \
-             --arg script "$inject_path" \
-            '.hooks.PreToolUse += [{"matcher":$m,"type":"command","timeout":15}] |
-             .hooks.PreToolUse = [.hooks.PreToolUse[] | if .matcher == $m then (. + {"command":($node + " " + $script)}) else . end]' \
-            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
-          log "Added inject hook for matcher: $matcher"
-        elif [[ -n "$validate_path" ]]; then
-          jq --arg m     "$matcher" \
-             --arg node  "$NODE_PATH" \
-             --arg script "$validate_path" \
-            '.hooks.PreToolUse += [{"matcher":$m,"type":"command","timeout":5}] |
-             .hooks.PreToolUse = [.hooks.PreToolUse[] | if .matcher == $m then (. + {"command":($node + " " + $script)}) else . end]' \
-            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
-          log "Added validate hook for matcher: $matcher"
-        elif [[ -n "$inject_path" ]]; then
-          jq --arg m     "$matcher" \
-             --arg node  "$NODE_PATH" \
-             --arg script "$inject_path" \
-            '.hooks.PreToolUse += [{"matcher":$m,"type":"command","timeout":15}] |
-             .hooks.PreToolUse = [.hooks.PreToolUse[] | if .matcher == $m then (. + {"command":($node + " " + $script)}) else . end]' \
-            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
-          log "Added inject hook for matcher: $matcher"
-        fi
+        # First pass: remove all existing entries with this matcher and add correct one
+        jq --arg m "$matcher" \
+           '.hooks.PreToolUse = [.hooks.PreToolUse[] | select(.matcher != $m)] + [{"matcher":$m,"hooks":[{"type":"command","timeout":'"$timeout"'}]}]' \
+           "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
+        # Second pass: fix any remaining entries that have top-level command (from prior runs)
+        jq --arg m   "$matcher" \
+           --arg cmd  "$command" \
+           --argjson t $timeout \
+          '.hooks.PreToolUse |= [.[] | if (.matcher == $m and has("command")) then
+            ((.hooks // []) + [{"type":"command","timeout":$t,"command":$cmd}]) as $nh |
+            . + {"hooks": $nh} - {command}
+          else . end]' \
+          "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
+        log "Added hook for matcher: $matcher (cmd=$command)"
       fi
     else
       log "Vault-rules hooks already registered for matcher: $matcher"
