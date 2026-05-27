@@ -2,6 +2,14 @@
 
 Install the Claude Code vault-rules system on any machine. Creates a structured knowledge base (LLM Wiki) with agent-enforced rules, or adds it alongside existing vaults.
 
+## What This Is — In Plain English
+
+The **vault** is a personal knowledge base for AI/ML concepts, tools, and topics. You feed it articles, notes, transcripts (raw sources), then Claude Code compiles them into structured wiki entries with proper tags and cross-links.
+
+The **hooks** are invisible — they make Claude Code aware of your wiki rules whenever it reads a file in the vault, and prevent accidental edits to managed files.
+
+Think of it as: you feed sources → Claude Code organizes them into a searchable wiki, with rules enforced automatically.
+
 ## Quick Start
 
 ```bash
@@ -70,12 +78,83 @@ Each vault gets its own `Read:${VAULT_PATH}` matcher in settings.json. The valid
 
 4. **wiki_tool.py** — Self-contained (stdlib only) tool for building catalog, linting notes, scanning sources, and managing the vault.
 
-## After Installation
+## How You'll Use It (Daily Workflow)
 
+### Ingesting a new article or note
+1. **Save the raw source** — paste cleaned Markdown into `Wiki/Raw/Sources/`
+2. **Ask Claude Code to compile it** — e.g., "I have a source on Graph RAG, please add the key concepts to my wiki"
+3. Claude Code will use `wiki_tool.py build && lint` automatically when needed (via the SKILL.md)
+
+### Querying your knowledge base
+- **Ask Claude Code** — it knows to search `Wiki/index.md` and the catalog first
+- **Search from CLI** — `python3 scripts/wiki_tool.py search-catalog --query "your topic"`
+
+### Running the tool directly
 ```bash
 cd ~/.vault/{name}
+
+# Validate everything is consistent (run after any changes)
 python3 scripts/wiki_tool.py doctor && build && lint
+
+# Scan raw sources and update manifest
+python3 scripts/wiki_tool.py source-scan --update --accept-covered
+
+# Search the compiled catalog
+python3 scripts/wiki_tool.py search-catalog --query "neural networks"
+
+# Log a change
+python3 scripts/wiki_tool.py log -m "Added Graph RAG concept note"
+
+# Check for sources not yet in manifest
+python3 scripts/wiki_tool.py source-delta
 ```
+
+## Manual Parts — What Requires Human Attention
+
+The system is mostly automatic, but these things need your input:
+
+| Task | How Often | What You Do |
+|------|-----------|-------------|
+| **Add raw sources** (`Raw/Sources/`) | As you find interesting content | Paste or save cleaned Markdown files. Keep them source-faithful — don't rewrite them in your own words. |
+| **Compile sources into wiki notes** | After adding new raw sources | Ask Claude Code to compile, or do it yourself using the templates in `_templates/` |
+| **Run `wiki_tool.py build && lint`** | After every change to wiki notes | Ensures the catalog and manifest stay in sync. The SKILL.md tells agents this, but you may need to run it manually if working outside Claude Code. |
+| **Review agent-generated notes** | Periodically | Agents are good at following rules but can miss nuance. Check important entries for accuracy and completeness. |
+| **Update the source manifest** (`Schema/source-manifest.jsonl`) | After ingesting new sources | Run `source-scan --update` to register raw files and accept any that are already processed. |
+| **Maintain cross-references** (`[[wikilinks]]`) | When connecting related concepts | Links between notes should be intentional, not auto-generated. Review them as you add new wiki entries. |
+
+**Not automated:**
+- **Source cleaning** — stripping ads, navigation, and boilerplate from scraped articles. You (or an agent) need to produce clean Markdown before saving to `Raw/Sources/`.
+- **Curation** — deciding what's worth compiling into the wiki. The system won't add notes automatically; something has to trigger it.
+- **Schema changes** — if you modify note templates or frontmatter rules, the SKILL.md and AGENTS.md need updating too.
+
+## Customization — Making It Yours
+
+### Adding new note types
+Create a template in `_templates/` (use an existing one as reference), then add the folder and allowed tags to `AGENTS.md`.
+
+### Customizing hook behavior
+Hooks live in `~/.claude/hooks/` and are **copies** of the bundle — they're not symlinked. To customize:
+- Edit `~/.claude/hooks/vault-rules-inject.js` to change what gets injected
+- Edit `~/.claude/hooks/vault-rules-validate.js` to change what gets blocked
+- After changes, restart Claude Code (hooks are read on tool invocation)
+
+### Adding more vaults
+Run the installer again with a different name:
+```bash
+./install.sh --vault-name Work    # Second vault, same machine
+```
+
+Each vault gets its own hooks and settings.json entries. The validate hook applies to all registered paths.
+
+### Using with Obsidian Desktop
+If you use the Obsidian app, the installer can register your vault in `obsidian.json`. After installation:
+1. Open Obsidian Desktop → "Open folder as vault" → select `~/.vault/{name}/`
+2. Your wiki will appear in the sidebar alongside any other vaults
+
+### Disabling parts of the system
+- **No hooks:** Skip step 6 of installation (decline when prompted). Hooks are optional — the SKILL.md and AGENTS.md work without them.
+- **No Obsidian registration:** Decline when prompted during install, or remove entries from `obsidian.json` manually.
+- **No pi-vault-path:** Decline when prompted, or remove the path from `~/.pi/pi-vault-path`.
 
 ## Files
 
