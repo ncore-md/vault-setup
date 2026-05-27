@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A setup wizard that installs the Claude Code vault-rules system (hooks, 5 skills, brief, agent rules) on any machine — creates a new vault from scratch or adds it alongside existing ones.
+A setup wizard that installs the Claude Code vault-rules system (hooks, skill, brief, agent rules) on any machine — creates a new vault from scratch or adds it alongside existing ones.
 
 ## Location
 
@@ -14,7 +14,6 @@ All 5 implementation steps done and verified:
 1. Hooks refactored for dynamic vault path resolution (was hardcoded, now uses state file + env var + auto-detect)
 2. Bundle directory assembled (hooks, skill, brief, AGENTS.md, 7 templates, scripts.tar.gz)
 3. install.sh written and tested (dry-run, fresh install, idempotent re-install)
-4. Step 2 refactored from hardcoded vault-rules to a loop that installs all SKILL.md files in bundle/skills/
 4. README.md written
 5. Interactive vault selection + Obsidian registration added
 
@@ -27,7 +26,7 @@ vault-setup/
 ├── HANDOVER.md             # This file
 └── bundle/                 # All installable seed files
     ├── hooks/              # vault-rules-inject.js, vault-rules-validate.js (refactored versions)
-    ├── skills/             # 5 SKILL.md files: vault-rules + llm-wiki-{ingest,query,lint,maintain}
+    ├── skills/vault-rules/ # SKILL.md
     ├── brief/              # vault-brief.md
     ├── AGENTS.md           # Agent rules (from Core vault)
     └── templates/          # 7 note templates (concept, entity, log, project, session-log, source, topic)
@@ -45,7 +44,7 @@ The hooks were refactored from hardcoded paths to dynamic resolution:
 
 1. Parses `--vault-name NAME` (default: "Core") and `--dry-run`
 2. Resolves vault root at `$HOME/.vault/$VAULT_NAME`
-3. Installs hooks → `~/.claude/hooks/`, skills → loop over `bundle/skills/*/SKILL.md` into `~/.claude/skills/`, brief → `~/.claude/`
+3. Installs hooks → `~/.claude/hooks/`, skill → `~/.claude/skills/vault-rules/`, brief → `~/.claude/`
 4. If vault doesn't exist: creates full directory tree, copies AGENTS.md + templates, extracts scripts
 5. If vault exists: skips existing files (idempotent)
 6. Writes `vault-rules-state.json` with resolved path(s)
