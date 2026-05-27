@@ -305,7 +305,8 @@ _jq_merge_with_jq() {
       else
         # First pass: remove all existing entries with this matcher and add correct one
         jq --arg m "$matcher" \
-           '.hooks.PreToolUse = [.hooks.PreToolUse[] | select(.matcher != $m)] + [{"matcher":$m,"hooks":[{"type":"command","timeout":'"$timeout"'}]}]' \
+           '.hooks.PreToolUse = [.hooks.PreToolUse[] | select(.matcher != $m)] + [{"matcher":$m,"hooks":[{"type":"command","timeout":'"$timeout"',"command":(""+$c|@json)}]}]' \
+           --arg c "$command" \
            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
         # Second pass: fix any remaining entries that have top-level command (from prior runs)
         jq --arg m   "$matcher" \
