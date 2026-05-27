@@ -13,12 +13,14 @@ CLAUDE="$HOME_DIR/.claude"
 # Defaults
 VAULT_NAME=""
 DRY_RUN=false
+_UNINSTALL=false
 
 # ── Argument parsing ───────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --vault-name) VAULT_NAME="$2"; shift 2 ;;
     --dry-run)    DRY_RUN=true; shift ;;
+    --uninstall)  _UNINSTALL=true; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -26,6 +28,76 @@ done
 # ── Helpers (must be before functions that call them) ───────────────
 log()  { /bin/echo "[vault-setup] $*"; }
 warn() { /bin/echo "[vault-setup] WARNING: $*" >&2; }
+
+# ── Uninstall mode (early exit before any install steps) ───────────
+if [[ "$_UNINSTALL" == true ]]; then
+  if [[ -z "$VAULT_NAME" ]]; then
+    echo "Usage: $0 --uninstall --vault-name NAME" >&2
+    exit 1
+  fi
+
+  VAULT_ROOT="$HOME_DIR/.vault/$VAULT_NAME"
+  if [[ ! -d "$VAULT_ROOT" ]]; then
+    echo "[vault-setup] Vault not found at $VAULT_ROOT." >&2
+    exit 1
+  fi
+
+  # Resolve hooks dir (same as install path)
+  HOOKS_DIR="$CLAUDE/hooks"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    log "[dry-run] Would uninstall vault: $VAULT_NAME ($VAULT_ROOT)"
+  else
+    log "Uninstalling vault: $VAULT_NAME ($VAULT_ROOT)"
+
+    # Remove state file entries
+    if [[ -f "$HOOKS_DIR/vault-rules-state.json" ]]; then
+      _state_tmp="${HOOKS_DIR}/vault-rules-state.json.tmp.$$"
+      jq --arg p "$VAULT_ROOT" 'del(.vault_paths[] | select(. == $p)) | if (.vault_paths | length) == 0 then del(.) else . end' "$HOOKS_DIR/vault-rules-state.json" > "$_state_tmp" 2>/dev/null && mv "$_state_tmp" "$HOOKS_DIR/vault-rules-state.json"
+      log "Removed vault from state file"
+    fi
+
+    # Remove hook entries from settings.json if it exists and has hooks to remove
+    _settings="$CLAUDE/settings.json"
+    if [[ -f "$_settings" ]]; then
+      _set_tmp="${_settings}.tmp.$$"
+      # Remove any PreToolUse entries whose command contains vault-rules for this vault's matchers
+      jq --arg r "Read:$VAULT_ROOT" \
+         '(.hooks.PreToolUse // []) = [.hooks.PreToolUse[] | select(.matcher != $r) |
+           .hooks = (.hooks // [] | map(select((.command // "") | contains("vault-rules-") | not)))]' \
+         "$_settings" > "$_set_tmp" 2>/dev/null && mv "$_set_tmp" "$_settings"
+      log "Removed vault hooks from settings.json (if any)"
+    fi
+
+    # Remove obsidian registration if present
+    _obssi="$HOME/Library/Application Support/Obsidian/obsidian.json"
+    if [[ -f "$_obssi" ]]; then
+      _obs_id="$(echo "$VAULT_ROOT" | shasum -a 256 | cut -d' ' -f1 | head -c 16)"
+      _obs_tmp="${_obssi}.tmp.$$"
+      jq --arg id "$_obs_id" 'del(.vaults[$id])' "$_obssi" > "$_obs_tmp" 2>/dev/null && mv "$_obs_tmp" "$_obssi"
+      log "Removed vault from Obsidian registration (if present)"
+    fi
+
+    # Remove pi-vault-path entry if present
+    _pi_path="$HOME/.pi/pi-vault-path"
+    if [[ -f "$_pi_path" ]]; then
+      _pi_tmp="${_pi_path}.tmp.$$"
+      grep -vxF "$VAULT_ROOT" "$_pi_path" > "$_pi_tmp" 2>/dev/null || true
+      mv "$_pi_tmp" "$_pi_path"
+      log "Removed vault from pi-vault-path (if present)"
+    fi
+
+    # Remove installed files
+    rm -f "$HOOKS_DIR/vault-rules-inject.js" "$HOOKS_DIR/vault-rules-validate.js"
+    rm -f "$CLAUDE/skills/vault-rules/SKILL.md"
+    rmdir "$CLAUDE/skills/vault-rules/" 2>/dev/null || true
+    rm -f "$CLAUDE/vault-brief.md"
+
+    log "Uninstall complete. Vault data preserved at $VAULT_ROOT."
+  fi
+
+  exit 0
+fi
 
 # ── Vault discovery & selection ────────────────────────────────────
 _discover_vaults() {
@@ -113,12 +185,29 @@ _register_obsidian_vault() {
     return 0
   fi
 
-  # Register the vault in obsidian.json
-  local tmp="${_OBSSI_CONFIG}.tmp"
+  # Confirm before writing to Obsidian config (outside project scope)
+  if [[ "$DRY_RUN" != true ]]; then
+    echo "" >&2
+    _prompt_msg="Register this vault in Obsidian ($_OBSSI_CONFIG)? [y/N] "
+    _prompt_msg="${_prompt_msg% ]}"
+    echo -n "$_prompt_msg" >&2
+    read -r _confirm_obsidian
+  else
+    echo "[dry-run] Would register vault in Obsidian" >&2
+    return 0
+  fi
+
+  if [[ "$_confirm_obsidian" != [yY]* ]]; then
+    log "Skipping Obsidian registration (user declined)."
+    return 0
+  fi
+
+  # Register the vault in obsidian.json (with unique tmp per PID)
+  local _obs_tmp="${_OBSSI_CONFIG}.tmp.$$"
   jq --arg id "$id" \
      --arg path "$vault_path" \
      '.vaults[$id] = {"path": $path}' \
-     "$_OBSSI_CONFIG" > "$tmp" && mv "$tmp" "$_OBSSI_CONFIG"
+     "$_OBSSI_CONFIG" > "$_obs_tmp" && mv "$_obs_tmp" "$_OBSSI_CONFIG"
 
   log "Registered vault in Obsidian (id=$id, path=$vault_path)"
 }
@@ -127,11 +216,45 @@ _register_pi_vault() {
   local vault_path="$1"
   mkdir -p "$HOME_DIR/.pi"
 
-  # Append to pi-vault-path (one per line)
+  # Confirm before writing to third-party config
   if [[ -f "$HOME_DIR/.pi/pi-vault-path" ]]; then
-    grep -qxF "$vault_path" "$HOME_DIR/.pi/pi-vault-path" 2>/dev/null || echo "$vault_path" >> "$HOME_DIR/.pi/pi-vault-path"
+    grep -qxF "$vault_path" "$HOME_DIR/.pi/pi-vault-path" 2>/dev/null || {
+      if [[ "$DRY_RUN" != true ]]; then
+        echo "" >&2
+        _prompt_msg="Register vault path with pi-vault-path? ($HOME_DIR/.pi/pi-vault-path) [y/N] "
+        _prompt_msg="${_prompt_msg% ]}"
+        echo -n "$_prompt_msg" >&2
+        read -r _confirm_pi
+      else
+        echo "[dry-run] Would register with pi-vault-path" >&2
+        _confirm_pi="y"
+      fi
+
+      if [[ "$_confirm_pi" == [yY]* ]]; then
+        echo "$vault_path" >> "$HOME_DIR/.pi/pi-vault-path"
+      else
+        log "Skipping pi-vault-path registration (user declined)."
+        return 0
+      fi
+    }
   else
-    echo "$vault_path" > "$HOME_DIR/.pi/pi-vault-path"
+    if [[ "$DRY_RUN" != true ]]; then
+      echo "" >&2
+      _prompt_msg="Register vault path with pi-vault-path? ($HOME_DIR/.pi/pi-vault-path) [y/N] "
+      _prompt_msg="${_prompt_msg% ]}"
+      echo -n "$_prompt_msg" >&2
+      read -r _confirm_pi
+    else
+      echo "[dry-run] Would create pi-vault-path" >&2
+      _confirm_pi="y"
+    fi
+
+    if [[ "$_confirm_pi" == [yY]* ]]; then
+      echo "$vault_path" > "$HOME_DIR/.pi/pi-vault-path"
+    else
+      log "Skipping pi-vault-path registration (user declined)."
+      return 0
+    fi
   fi
 
   log "Registered vault path in ~/.pi/pi-vault-path"
@@ -224,7 +347,7 @@ _jq_merge_with_jq() {
              --arg script "$inject_path" \
             '.hooks.PreToolUse += [{"matcher":$m,"type":"command","timeout":15}] |
              .hooks.PreToolUse = [.hooks.PreToolUse[] | if .matcher == $m then (. + {"command":($node + " " + $script)}) else . end]' \
-            "$settings" > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
+            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
           log "Added inject hook for matcher: $matcher"
         elif [[ -n "$validate_path" ]]; then
           jq --arg m     "$matcher" \
@@ -232,7 +355,7 @@ _jq_merge_with_jq() {
              --arg script "$validate_path" \
             '.hooks.PreToolUse += [{"matcher":$m,"type":"command","timeout":5}] |
              .hooks.PreToolUse = [.hooks.PreToolUse[] | if .matcher == $m then (. + {"command":($node + " " + $script)}) else . end]' \
-            "$settings" > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
+            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
           log "Added validate hook for matcher: $matcher"
         elif [[ -n "$inject_path" ]]; then
           jq --arg m     "$matcher" \
@@ -240,7 +363,7 @@ _jq_merge_with_jq() {
              --arg script "$inject_path" \
             '.hooks.PreToolUse += [{"matcher":$m,"type":"command","timeout":15}] |
              .hooks.PreToolUse = [.hooks.PreToolUse[] | if .matcher == $m then (. + {"command":($node + " " + $script)}) else . end]' \
-            "$settings" > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
+            "$settings" > "${settings}.tmp.$$" && mv "${settings}.tmp.$$" "$settings"
           log "Added inject hook for matcher: $matcher"
         fi
       fi
@@ -326,7 +449,8 @@ with open(settings_path, "w") as f:
 
 PYTHON_SCRIPT
 
-  if [[ $? -eq 0 ]]; then
+  _python_status=$?
+  if [[ $_python_status -eq 0 ]]; then
     log "settings.json updated via python3"
   else
     warn "Python merge failed."
@@ -475,7 +599,19 @@ if [[ "$DRY_RUN" == true ]]; then
   log "[dry-run] Would extract scripts.tar.gz → vault/scripts/"
 else
   mkdir -p "$VAULT_ROOT/scripts"
-  tar xzf "$BUNDLE/scripts.tar.gz" -C "$VAULT_ROOT/scripts/" 2>/dev/null || true
+
+  # Safety: verify tarball contents before extracting (prevent zip-slip)
+  _tar_contents="$(tar tzf "$BUNDLE/scripts.tar.gz" 2>/dev/null)" || {
+    warn "scripts.tar.gz is corrupt or unreadable. Skipping."
+  }
+  if [[ -n "$_tar_contents" ]]; then
+    # Reject any entries with .. or absolute paths
+    if echo "$_tar_contents" | grep -qE '(^|/)\.\./|^/'; then
+      warn "scripts.tar.gz contains unsafe paths (.. or absolute). Refusing to extract."
+    else
+      tar xzf "$BUNDLE/scripts.tar.gz" -C "$VAULT_ROOT/scripts/" 2>/dev/null || true
+    fi
+  fi
   chmod +x "$VAULT_ROOT/scripts"/*.py 2>/dev/null || true
   log "Extracted wiki_tool.py, audit_public.py → scripts/"
 fi
@@ -498,9 +634,8 @@ else
       "$_state_file")"
     echo "$_merged" > "$_state_file"
   else
-    cat > "$_state_file" <<EOF
-{"vault_path":"$VAULT_ROOT","vault_paths":["$VAULT_ROOT"]}
-EOF
+    jq -n --arg p "$VAULT_ROOT" \
+      '{"vault_path":$p,"vault_paths":[$p]}' > "$_state_file"
   fi
 
   log "Wrote vault-rules-state.json → $HOOKS_DIR/"
@@ -510,9 +645,20 @@ fi
 if [[ -f "$CLAUDE/settings.json" ]]; then
   log "Registering hooks in settings.json"
 
-  if [[ "$DRY_RUN" == true ]]; then
-    log "[dry-run] Would register vault-rules hooks in settings.json"
+  # Confirm before modifying settings (outside project scope)
+  if [[ "$DRY_RUN" != true ]]; then
+    echo "" >&2
+    _prompt_msg="Add vault-rules hooks to Claude Code settings? ($CLAUDE/settings.json) [y/N] "
+    _prompt_msg="${_prompt_msg% ]}"
+    echo -n "$_prompt_msg" >&2
+    read -r _confirm_settings
   else
+    echo "[dry-run] Would register vault-rules hooks in settings.json" >&2
+  fi
+
+  if [[ "$DRY_RUN" != true ]] && [[ "${_confirm_settings:-n}" != [yY]* ]]; then
+    log "Skipping hook registration (user declined)."
+  elif [[ "$DRY_RUN" != true ]]; then
     if command -v jq &>/dev/null; then
       _jq_merge_with_jq "$VAULT_ROOT" "Read:${VAULT_ROOT}" || warn "settings.json merge failed (jq)"
     elif command -v python3 &>/dev/null; then
@@ -520,7 +666,9 @@ if [[ -f "$CLAUDE/settings.json" ]]; then
     else
       warn "Cannot update settings.json: no jq or python3 available."
     fi
-  fi
+  else
+    log "[dry-run] Would register hooks in settings.json"
+fi
 else
   warn "settings.json not found — hooks will NOT fire automatically."
 fi
@@ -574,9 +722,9 @@ else
   if command -v python3 &>/dev/null && [[ -f "$VAULT_ROOT/scripts/wiki_tool.py" ]]; then
     echo ""
     log "Running quick health check..."
-    cd "$VAULT_ROOT" && python3 scripts/wiki_tool.py doctor 2>&1 || true
-    cd "$VAULT_ROOT" && python3 scripts/wiki_tool.py build 2>&1 || true
-    cd "$VAULT_ROOT" && python3 scripts/wiki_tool.py lint 2>&1 || true
+    (cd "$VAULT_ROOT" && python3 scripts/wiki_tool.py doctor) 2>&1 || true
+    (cd "$VAULT_ROOT" && python3 scripts/wiki_tool.py build) 2>&1 || true
+    (cd "$VAULT_ROOT" && python3 scripts/wiki_tool.py lint) 2>&1 || true
     echo ""
     log "Health check complete."
   fi

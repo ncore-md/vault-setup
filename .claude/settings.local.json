@@ -62,7 +62,24 @@
       "Bash(git config *)",
       "Bash(git -C /Users/bernardoresende/Core status Sandbox/vault-setup)",
       "Bash(git -C /Users/bernardoresende/Core/Sandbox/vault-setup init)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(claude -p \"Create a new wiki note about 'Graph RAG' in Wiki/Concepts/. Use the concept-note template. Include proper frontmatter with title, tags \\(concept\\), created/updated dates as 2026-05-27, topics and sources arrays, source_count: 1. Add a reference to Raw/Sources/graph-rag.md as the source \\(create that file too\\). Use wikilinks for Related section.\")",
+      "Bash(claude -y \"Create a wiki note about 'Graph RAG' in Wiki/Concepts/graph-rag.md. Use concept-note template format: frontmatter with title, tags [concept], created/updated dates as 2026-05-27, topics [], sources [\\\\\"graph-rag\\\\\"], source_count: 1. Write a proper overview of Graph RAG \\(knowledge extraction → graph construction → retrieval generation pipeline\\). Include Key Points and Related sections with wikilinks. Also create Raw/Sources/graph-rag.md as the source file.\")",
+      "Bash(claude --dangerously-skip-permissions \"Create a wiki note about 'Graph RAG' in Wiki/Concepts/graph-rag.md. Use concept-note template format: frontmatter with title, tags [concept], created/updated dates as 2026-05-27, topics [], sources [\\\\\"graph-rag\\\\\"], source_count: 1. Write a proper overview of Graph RAG \\(knowledge extraction → graph construction → retrieval generation pipeline\\). Include Key Points and Related sections with wikilinks. Also create Raw/Sources/graph-rag.md as the source file.\")",
+      "Bash(claude --dangerously-skip-permissions \"Read Wiki/Concepts/graph-rag.md and summarize what it's about\")",
+      "Bash(claude --dangerously-skip-permissions \"Overwrite Wiki/Concepts/graph-rag.md with just the text 'hello world' using Write tool\")",
+      "Bash(claude \"Overwrite Wiki/Concepts/graph-rag.md with just the text 'hello world' using Write tool\")",
+      "Bash(HOME=/Users/bernardoresende node /Users/bernardoresende/.claude/hooks/vault-rules-validate.js)",
+      "Bash(claude \"I want to overwrite Wiki/Concepts/graph-rag.md with just 'hello world' using the Write tool. Do it.\")",
+      "Bash(claude \"Write Wiki/Concepts/new-test-note.md with content 'test note'\")",
+      "Bash(claude --dangerously-skip-permissions \"Overwrite Wiki/Concepts/graph-rag.md with just 'hello world'\")",
+      "Bash(claude --dangerously-skip-permissions \"Edit Wiki/Concepts/graph-rag.md to replace the entire content with just 'hello world'\")",
+      "Bash(claude --dangerously-skip-permissions \"Write Wiki/Concepts/test-hook-block.md with content 'this should be blocked'\")",
+      "Bash(rm -f Wiki/Concepts/test-hook-block.md)",
+      "Bash(claude \"Write Wiki/Concepts/new-file-test-2026.md with content 'test'\")",
+      "Bash(HOME=/tmp/test-home bash install.sh --dry-run)",
+      "Bash(HOME=/tmp/test-home bash install.sh --vault-name TestVault)",
+      "Bash(HOME=/tmp/test-home bash install.sh --uninstall --vault-name TestVault)"
     ]
   }
 }

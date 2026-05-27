@@ -81,10 +81,46 @@ python3 scripts/wiki_tool.py doctor && build && lint
 
 | File | Role |
 |------|------|
-| `install.sh` | Main installer script (~300 lines) |
+| `install.sh` | Main installer script (~580 lines) |
 | `bundle/hooks/` | Hook scripts for ~/.claude/hooks/ |
 | `bundle/skills/vault-rules/SKILL.md` | Skill definition |
 | `bundle/brief/vault-brief.md` | Sub-agent brief |
 | `bundle/AGENTS.md` | Agent rules for vault root |
 | `bundle/templates/` | 7 note templates |
 | `bundle/scripts.tar.gz` | wiki_tool.py + audit_public.py |
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `No settings.json found` | Run the installer after Claude Code is installed and has created its config. |
+| `Neither jq nor python3 found` | Install either (`brew install jq` or use system Python). wiki_tool.py still works without it. |
+| `node not found` — hooks won't fire | Install Node.js (brew, nvm). Hooks require a working `node` binary. |
+| `obsidian CLI not found` | Install Obsidian or the CLI at `/usr/local/bin/obsidian`. Wiki tools work without it. |
+| Hooks firing but no AGENTS.md injected | Verify `vault-rules-state.json` contains your vault path and the `Read:${VAULT_PATH}` matcher is in settings.json. |
+| Write/Edit blocked unexpectedly | The validate hook blocks direct writes to vault paths. Use Obsidian CLI or `wiki_tool.py` instead, or edit outside the managed path. |
+| Multiple vaults — hooks interfering | Each vault gets its own `Read:${VAULT_PATH}` matcher. The validate hook applies to all registered paths. |
+| `scripts.tar.gz is corrupt` | Re-download or re-run installer from the repo (the tarball ships in `bundle/`). |
+
+## Uninstall
+
+```bash
+# Remove hooks, skill, brief, and state entries for a vault (data preserved)
+./install.sh --uninstall --vault-name MyVault
+
+# Dry-run preview
+./install.sh --uninstall --vault-name MyVault --dry-run
+```
+
+This preserves `~/.vault/MyVault/` for backup/restoration. To remove the vault data entirely, delete it manually:
+
+```bash
+rm -rf ~/.vault/MyVault
+```
+
+## Known Limitations
+
+- **Moving a vault after install** — Update the state file manually: `jq '.vault_path = "new/path"' ~/.claude/hooks/vault-rules-state.json`. The old matcher in settings.json will still work for reads.
+- **settings.json race condition** — Running two installs simultaneously may corrupt the file. Install vaults sequentially.
+- **Obsidian config** — Registration writes to Obsidian's `obsidian.json`. If you don't use Obsidian, decline when prompted (or the write is silent).
+- **pi-vault-path** — Registration appends to a third-party tool's config file. Decline when prompted if you don't use it.
