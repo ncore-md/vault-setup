@@ -2,6 +2,20 @@
 
 Install the Claude Code vault-rules system on any machine. Creates a structured knowledge base (LLM Wiki) with agent-enforced rules, or adds it alongside existing vaults.
 
+## Install from Git (One-Line Setup)
+
+```bash
+git clone https://github.com/ncore-md/vault-setup.git && cd vault-setup && ./install.sh
+```
+
+Or install to a named vault:
+
+```bash
+git clone https://github.com/ncore-md/vault-setup.git && cd vault-setup && ./install.sh --vault-name MyVault
+```
+
+This is the recommended way to get started — you get a clean copy of all installer files and wiki tool scripts, then run the interactive setup.
+
 ## What This Is — In Plain English
 
 The **vault** is a personal knowledge base for AI/ML concepts, tools, and topics. You feed it articles, notes, transcripts (raw sources), then Claude Code compiles them into structured wiki entries with proper tags and cross-links.
@@ -23,13 +37,26 @@ Think of it as: you feed sources → Claude Code organizes them into a searchabl
 | Component | Destination | Purpose |
 |-----------|-------------|---------|
 | Hooks | `~/.claude/hooks/vault-rules-{inject,validate}.js` | Inject vault rules on Read/Bash; block direct writes to managed vaults |
-| Skill definition | `~/.claude/skills/vault-rules/SKILL.md` | Agent skill with workflow rules |
+| Skills | `~/.claude/skills/{name}/SKILL.md` | Agent skills with workflow rules (vault-rules + 4 wiki skills) |
 | Brief | `~/.claude/vault-brief.md` | Sub-agent instructions for vault operations |
 | AGENTS.md | `~/.vault/{name}/AGENTS.md` | Agent rules for the vault itself |
 | Templates | `~/.vault/{name}/_templates/` | 7 note templates (concept, entity, log, project, session-log, source, topic) |
 | Scripts | `~/.vault/{name}/scripts/` | wiki_tool.py, audit_public.py (stdlib-only Python) |
 | State file | `~/.claude/hooks/vault-rules-state.json` | Maps vault paths for hook resolution |
 | settings.json entries | `~/.claude/settings.json` | Hook matchers for PreToolUse injection/validation |
+
+## Wiki Skills — How Claude Code Knows What to Do
+
+The installer loads 4 skills into `~/.claude/skills/` that teach Claude Code how to work with your wiki. Each skill activates automatically when you ask about a relevant task — no manual configuration needed.
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| **llm-wiki-ingest** | "I have a source on X" — adding new content to the wiki | Cleans your raw source, searches for related topics in existing notes (so it doesn't duplicate), creates or updates a focused Wiki note with proper tags, runs validation |
+| **llm-wiki-query** | "What do I know about X?" — asking questions the wiki can answer | Starts with `Wiki/index.md`, searches a compiled catalog, opens only relevant notes (not all of them), synthesizes an answer from distilled knowledge |
+| **llm-wiki-lint** | Before committing wiki changes — checking quality | Validates frontmatter (title, tags, sources), ensures `source_count` matches actual source count, reports specific violations with file names |
+| **llm-wiki-maintain** | Before a meaningful commit that touches Wiki content — housekeeping | Runs health check (`doctor`), rebuilds catalog and index, validates notes, checks Raw source coverage, logs the changes |
+
+**Why 4 skills instead of one?** Each skill handles a distinct workflow stage. The vault-rules skill covers the rules and guardrails, while each wiki skill focuses on a specific operation: ingest (ingest → compile), query (search → answer), lint (validate quality), and maintain (keep things in sync). This keeps each skill's instructions focused rather than bloated.
 
 ## Vault Structure Created
 
@@ -83,11 +110,16 @@ Each vault gets its own `Read:${VAULT_PATH}` matcher in settings.json. The valid
 ### Ingesting a new article or note
 1. **Save the raw source** — paste cleaned Markdown into `Wiki/Raw/Sources/`
 2. **Ask Claude Code to compile it** — e.g., "I have a source on Graph RAG, please add the key concepts to my wiki"
-3. Claude Code will use `wiki_tool.py build && lint` automatically when needed (via the SKILL.md)
+3. Claude Code will invoke `llm-wiki-ingest` automatically (via SKILL.md) — it cleans the source, searches for related notes, creates or updates a Wiki entry with proper tags
+4. Run `llm-wiki-maintain` before committing changes (see below)
 
 ### Querying your knowledge base
-- **Ask Claude Code** — it knows to search `Wiki/index.md` and the catalog first
-- **Search from CLI** — `python3 scripts/wiki_tool.py search-catalog --query "your topic"`
+1. **Ask Claude Code** — e.g., "What do I know about Graph RAG?"
+2. It invokes `llm-wiki-query` automatically: starts with the index, searches the catalog, opens only relevant notes (not all of them), synthesizes an answer
+3. **Search from CLI** — `python3 scripts/wiki_tool.py search-catalog --query "your topic"`
+
+### Before committing wiki changes
+Ask Claude Code to run `llm-wiki-lint` on individual notes, or `llm-wiki-maintain` for a full maintenance cycle (health check → rebuild catalog → validate notes → source coverage).
 
 ### Running the tool directly
 ```bash
@@ -161,7 +193,8 @@ If you use the Obsidian app, the installer can register your vault in `obsidian.
 |------|------|
 | `install.sh` | Main installer script (~580 lines) |
 | `bundle/hooks/` | Hook scripts for ~/.claude/hooks/ |
-| `bundle/skills/vault-rules/SKILL.md` | Skill definition |
+| `bundle/skills/vault-rules/SKILL.md` | Agent skill (vault rules + workflows) |
+| `bundle/skills/llm-wiki-{ingest,query,lint,maintain}/SKILL.md` | Agent skills for wiki ingest, query, lint, and maintenance |
 | `bundle/brief/vault-brief.md` | Sub-agent brief |
 | `bundle/AGENTS.md` | Agent rules for vault root |
 | `bundle/templates/` | 7 note templates |
